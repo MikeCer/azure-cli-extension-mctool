@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from azure.cli.core.profiles import ResourceType, supported_api_version
-from azure.cli.command_modules.network._client_factory import network_client_factory
+from ._client_factory import network_client_factory
 
 import ipaddress
 

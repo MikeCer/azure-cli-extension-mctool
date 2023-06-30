@@ -10,3 +10,8 @@ def cf_mctool(cli_ctx, *_):
     # from azure.mgmt.CONTOSO import CONTOSOManagementClient
     # return get_mgmt_service_client(cli_ctx, CONTOSOManagementClient)
     return None
+
+def network_client_factory(cli_ctx, **kwargs):
+    from azure.cli.core.profiles import ResourceType
+    from azure.cli.core.commands.client_factory import get_mgmt_service_client
+    return get_mgmt_service_client(cli_ctx, ResourceType.MGMT_NETWORK, **kwargs)
