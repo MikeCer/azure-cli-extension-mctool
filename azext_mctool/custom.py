@@ -4,16 +4,41 @@
 # --------------------------------------------------------------------------------------------
 
 from knack.util import CLIError
+from azure.cli.core.profiles import ResourceType, supported_api_version
+from ._client_factory import network_client_factory
+from knack.log import get_logger
+from knack.util import CLIError
+import ipaddress
+import os
+import sys
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from azure.cli.core.profiles import ResourceType, supported_api_version
-from ._client_factory import network_client_factory
+logger = get_logger(__name__)
 
-import ipaddress
-
-console = Console()
+def _ensure_deps():
+    try:
+        import typer
+        from rich.console import Console
+        from rich.table import Table
+    except ImportError:
+        import subprocess
+        logger.warning("Installing dependencies required ...")
+        from azure.cli.core.extension import EXTENSIONS_DIR
+        mctool_ext_path = os.path.join(EXTENSIONS_DIR, 'mctool')
+        python_path = os.environ.get('PYTHONPATH', '')
+        os.environ['PYTHONPATH'] = python_path + ':' + mctool_ext_path if python_path else mctool_ext_path
+        cmd = [sys.executable, '-m', 'pip', 'install', '--target', mctool_ext_path,
+               'rich ', '-vv', '--disable-pip-version-check', '--no-cache-dir']
+        logger.warning('Installing "typer" and "rich" pip packages')
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+        logger.warning(result.stdout.decode('utf-8'))
+        logger.warning('Installation completed')
+        
+        #subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+        
+        
 
 def calculate_free_subnets(address_space, used_subnets, min_size):
   network = ipaddress.ip_network(address_space)
@@ -40,17 +65,28 @@ def calculate_free_subnets(address_space, used_subnets, min_size):
   return free_subnets
 
 def vnet_search_free_subnets(cmd, resource_group_name, vnet_name, search_network_size, plain_output=False):     
+    
+    #_ensure_deps()
 
-    ncf = network_client_factory(cmd.cli_ctx)
-    vnet = ncf.virtual_networks.get(resource_group_name, vnet_name) 
+    console = Console()
 
-    table_vnet = Table(vnet.name)
+
+    #ncf = network_client_factory(cmd.cli_ctx)
+    #vnet = ncf.virtual_networks.get(resource_group_name, vnet_name) 
+
+    from .aaz.latest.network.vnet import Show
+    vnet = Show(cli_ctx=cmd.cli_ctx)(command_args={
+        "name": vnet_name,
+        "resource_group": resource_group_name,
+    })
+
+    table_vnet = Table(vnet["name"])
     
     table_addr_space = Table()
     table_addr_space.add_column("Address Space", style="Blue", vertical="middle")
     table_addr_space.add_column("Subnets")
 
-    for addrs_prefs in vnet.address_space.address_prefixes:
+    for addrs_prefs in vnet["addressSpace"]["addressPrefixes"]:
         vnet_addrs = ipaddress.ip_network(addrs_prefs)
         used_subnets = []
 
@@ -62,13 +98,13 @@ def vnet_search_free_subnets(cmd, resource_group_name, vnet_name, search_network
         table_subnets.add_column("Num IPs")
         table_subnets.add_column("Name")
     
-        for subnet in vnet.subnets:
-            subnet_addr = ipaddress.ip_network(subnet.address_prefix)
+        for subnet in vnet["subnets"]:
+            subnet_addr = ipaddress.ip_network(subnet["addressPrefix"])
             if subnet_addr.subnet_of(vnet_addrs):
                 
-                table_subnets.add_row(str(subnet_addr),str(subnet_addr[0]), str(subnet_addr[-1]), str(subnet_addr.netmask), str(subnet_addr.num_addresses), subnet.name, style="Yellow")
+                table_subnets.add_row(str(subnet_addr),str(subnet_addr[0]), str(subnet_addr[-1]), str(subnet_addr.netmask), str(subnet_addr.num_addresses), subnet["name"], style="Yellow")
 
-                used_subnets.append(ipaddress.IPv4Network(subnet.address_prefix))
+                used_subnets.append(ipaddress.IPv4Network(subnet["addressPrefix"]))
 
         free_subnet = calculate_free_subnets(addrs_prefs, used_subnets, int(search_network_size))        
 
